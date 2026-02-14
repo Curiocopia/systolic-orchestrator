@@ -1,0 +1,417 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Systolic Array Demo</title>
+
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #111111;
+      --muted: #666666;
+      --card: #ffffff;
+      --border: #dddddd;
+      --cell: #fafafa;
+      --codebg: #f4f4f4;
+      --logbg: #0b1020;
+      --logfg: #d6e1ff;
+      --flash: #4c8bf5;
+      --btn: #111111;
+      --btnfg: #ffffff;
+      --btn2: #eaeaea;
+      --btn2fg: #111111;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0b0f1a;
+      --fg: #e9eefc;
+      --muted: #9aa7c7;
+      --card: #0f1629;
+      --border: #24304a;
+      --cell: #111a30;
+      --codebg: #121a2f;
+      --logbg: #060a12;
+      --logfg: #d6e1ff;
+      --flash: #7aa7ff;
+      --btn: #e9eefc;
+      --btnfg: #0b0f1a;
+      --btn2: #1a2340;
+      --btn2fg: #e9eefc;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      margin: 16px;
+      background: var(--bg);
+      color: var(--fg);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .titleblock h2 { margin: 0; }
+    .muted { color: var(--muted); font-size: 12px; margin-top: 6px; line-height: 1.35; }
+
+    .btn {
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      background: var(--btn);
+      color: var(--btnfg);
+      font-weight: 600;
+    }
+
+    .btn.secondary {
+      background: var(--btn2);
+      color: var(--btn2fg);
+      font-weight: 600;
+    }
+
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: var(--card);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 12px;
+      align-items: start;
+    }
+
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    textarea {
+      width: 320px;
+      height: 95px; /* smaller as requested */
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      background: var(--codebg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px;
+      outline: none;
+    }
+
+    input {
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--card);
+      color: var(--fg);
+      outline: none;
+    }
+
+    code {
+      background: var(--codebg);
+      padding: 2px 6px;
+      border-radius: 8px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .cell {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px;
+      min-width: 120px;
+      background: var(--cell);
+      transition: outline-color 120ms ease;
+    }
+    .cell .ij { font-size: 12px; color: var(--muted); }
+    .cell .acc { font-size: 18px; font-weight: 650; margin-top: 6px; }
+    .cell.flash { outline: 2px solid var(--flash); }
+
+    .statusline { display:flex; gap:12px; flex-wrap: wrap; align-items:center; }
+
+    .log {
+      max-height: 200px;
+      overflow: auto;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      background: var(--logbg);
+      color: var(--logfg);
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    .smalllabel { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">
+    <div class="titleblock">
+      <h2>Systolic Array Matrix Multiply</h2>
+      <div class="muted">
+        Uses <code>POST /runs/async</code> + <code>GET /runs/&lt;run_id&gt;/stream</code>.
+        Set <b>tick period</b> to slow the wavefront (try 4–6s).
+        <br/>N is inferred from the size of A (must be NxN, B must match).
+      </div>
+    </div>
+
+    <button id="themeBtn" class="btn secondary" title="Toggle theme">🌙 Dark</button>
+  </div>
+
+  <div class="layout">
+    <!-- LEFT: Accumulator grid -->
+    <div class="card">
+      <div class="statusline">
+        <div><b>Accumulator grid</b> <span class="muted">(acc per PE)</span></div>
+      </div>
+      <div id="grid" class="grid"></div>
+
+      <div class="row" style="margin-top:10px;">
+        <div class="muted">
+          Run ID: <code id="runId">-</code> • Cycle: <code id="cycle">-</code> • State: <code id="state">idle</code>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;"><b>Stream log</b></div>
+      <div id="log" class="log"></div>
+    </div>
+
+    <!-- RIGHT: Controls + smaller A/B inputs -->
+    <div class="card">
+      <div class="statusline">
+        <label>Tick period (s):
+          <input id="tick" type="number" min="0" max="30" step="0.5" value="4" style="width:90px;">
+        </label>
+      </div>
+
+      <div style="margin-top:10px;" class="row">
+        <div>
+          <div class="smalllabel"><b>A</b> (JSON array)</div>
+          <textarea id="A">[[1,2,3,4],[2,4,6,8],[3,6,9,12],[4,8,12,16]]</textarea>
+        </div>
+        <div>
+          <div class="smalllabel"><b>B</b> (JSON array)</div>
+          <textarea id="B">[[0,1,2,3],[1,2,3,4],[5,6,7,8],[9,10,11,12]]</textarea>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <button id="startBtn" class="btn">Start (async + SSE)</button>
+        <button id="stopBtn" class="btn secondary" disabled>Stop stream</button>
+      </div>
+
+    </div>
+  </div>
+
+<script>
+  let es = null;
+  let lastAcc = {}; // key "i,j" -> number
+  let lastFlashTimers = {};
+  const logEl = document.getElementById("log");
+
+  function log(msg) {
+    const line = `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+    logEl.textContent += line;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function parseMatrix(text, name) {
+    let m;
+    try { m = JSON.parse(text); } catch { throw new Error(`Invalid JSON in ${name}`); }
+    if (!Array.isArray(m) || m.length < 1 || !m.every(r => Array.isArray(r))) {
+      throw new Error(`${name} must be a 2D JSON array`);
+    }
+    const n = m.length;
+    if (!m.every(r => r.length === n)) throw new Error(`${name} must be NxN (square)`);
+    // ensure numbers
+    for (let i=0; i<n; i++) for (let j=0; j<n; j++) {
+      const v = m[i][j];
+      if (typeof v !== "number") throw new Error(`${name}[${i}][${j}] must be a number`);
+    }
+    return m;
+  }
+
+  function buildGrid(n) {
+    const grid = document.getElementById("grid");
+    grid.style.gridTemplateColumns = `repeat(${n}, minmax(120px, 1fr))`;
+    grid.innerHTML = "";
+    for (let i=0; i<n; i++) {
+      for (let j=0; j<n; j++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.id = `cell-${i}-${j}`;
+        cell.innerHTML = `<div class="ij">(${i},${j})</div><div class="acc" id="acc-${i}-${j}">0.00</div>`;
+        grid.appendChild(cell);
+      }
+    }
+  }
+
+  function flashCell(i, j) {
+    const id = `cell-${i}-${j}`;
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add("flash");
+    if (lastFlashTimers[id]) clearTimeout(lastFlashTimers[id]);
+    lastFlashTimers[id] = setTimeout(() => el.classList.remove("flash"), 250);
+  }
+
+  function updateFromStates(states) {
+    for (const st of states) {
+      if (!st || st.error) continue;
+      const i = st.i, j = st.j;
+      const key = `${i},${j}`;
+      const acc = Number(st.acc);
+      const prev = (key in lastAcc) ? lastAcc[key] : null;
+      if (prev === null || Math.abs(acc - prev) > 1e-12) flashCell(i, j);
+      lastAcc[key] = acc;
+      const el = document.getElementById(`acc-${i}-${j}`);
+      if (el) el.textContent = acc.toFixed(2);
+    }
+  }
+
+  function setState(s) { document.getElementById("state").textContent = s; }
+
+  async function startRun() {
+    let A, B;
+    try {
+      A = parseMatrix(document.getElementById("A").value, "A");
+      B = parseMatrix(document.getElementById("B").value, "B");
+    } catch (e) {
+      alert(e.message);
+      return;
+    }
+    const n = A.length;
+    if (B.length !== n) { alert("B must be the same size as A"); return; }
+
+    const tick = Number(document.getElementById("tick").value);
+    if (!Number.isFinite(tick) || tick < 0 || tick > 30) {
+      alert("Tick period must be between 0 and 30 seconds");
+      return;
+    }
+
+    buildGrid(n);
+    lastAcc = {};
+    document.getElementById("cycle").textContent = "-";
+    document.getElementById("runId").textContent = "-";
+    setState("starting");
+
+    const payload = { n, A, B, tick_period_s: tick };
+    log(`POST /runs/async n=${n} tick=${tick}s`);
+
+    const r = await fetch("/runs/async", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+
+    if (!r.ok) {
+      const txt = await r.text();
+      log(`ERROR starting run: ${r.status} ${txt}`);
+      setState("error");
+      return;
+    }
+
+    const data = await r.json();
+    const runId = data.run_id;
+    document.getElementById("runId").textContent = runId;
+
+    if (es) es.close();
+    es = new EventSource(`/runs/${runId}/stream`);
+    document.getElementById("stopBtn").disabled = false;
+
+    es.addEventListener("start", (e) => {
+      setState("running");
+      log(`SSE start`);
+    });
+
+    es.addEventListener("cycle", (e) => {
+      const msg = JSON.parse(e.data);
+      const cy = msg.data?.data?.cycle ?? msg.data?.cycle ?? msg.cycle;
+      document.getElementById("cycle").textContent = String(cy);
+      const states = msg.data?.data?.states || msg.data?.states || [];
+      updateFromStates(states);
+      log(`cycle=${cy}`);
+    });
+
+    es.addEventListener("done", (e) => {
+      setState("done");
+      log(`DONE`);
+      try {
+        const msg = JSON.parse(e.data);
+        const C = msg.data?.data?.C || msg.data?.C;
+        if (C) log(`C=${JSON.stringify(C)}`);
+      } catch {}
+      es.close();
+      es = null;
+      document.getElementById("stopBtn").disabled = true;
+    });
+
+    // Note: EventSource also fires a transport "error" event; we keep this handler
+    // and try to parse our own "event: error" payload if present.
+    es.addEventListener("error", (e) => {
+      setState("error");
+      try {
+        const msg = JSON.parse(e.data);
+        log(`RUN ERROR: ${JSON.stringify(msg)}`);
+      } catch {
+        log(`SSE transport/error (may auto-retry).`);
+      }
+    });
+  }
+
+  function stopStream() {
+    if (es) es.close();
+    es = null;
+    document.getElementById("stopBtn").disabled = true;
+    setState("stopped");
+    log("Stopped SSE stream.");
+  }
+
+  // Theme toggle (persisted)
+  function applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+    const btn = document.getElementById("themeBtn");
+    btn.textContent = (theme === "dark") ? "☀️ Light" : "🌙 Dark";
+    btn.title = `Switch to ${(theme === "dark") ? "light" : "dark"} theme`;
+  }
+
+  (function initTheme(){
+    const saved = localStorage.getItem("theme");
+    const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    applyTheme(saved || (prefersDark ? "dark" : "light"));
+  })();
+
+  document.getElementById("themeBtn").addEventListener("click", () => {
+    const cur = document.documentElement.getAttribute("data-theme") || "light";
+    applyTheme(cur === "dark" ? "light" : "dark");
+  });
+
+  document.getElementById("startBtn").addEventListener("click", startRun);
+  document.getElementById("stopBtn").addEventListener("click", stopStream);
+
+  // Initial grid inferred from default A
+  try {
+    const A = parseMatrix(document.getElementById("A").value, "A");
+    buildGrid(A.length);
+  } catch {
+    buildGrid(4);
+  }
+</script>
+</body>
+</html>
