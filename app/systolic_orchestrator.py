@@ -27,6 +27,8 @@ def env_int(name: str, default: int) -> int:
 # Defaults / config
 # -----------------------------
 N_DEFAULT = env_int("N", 3)
+ORCH_N = env_int("ORCH_N", env_int("N", N_DEFAULT))
+
 
 # Addressing mode:
 #   PE_MODE=local -> PE_BASE_URL_TEMPLATE + PE_BASE_PORT
@@ -112,7 +114,7 @@ def exception_details(e: Exception) -> str:
 # API models
 # -----------------------------
 class RunRequest(BaseModel):
-    n: int = Field(default=N_DEFAULT, ge=1, le=32)
+    n: int = Field(default=ORCH_N, ge=1, le=32)
     A: List[List[float]]
     B: List[List[float]]
     total_cycles: Optional[int] = Field(default=None, ge=1, le=256)
@@ -450,6 +452,8 @@ async def health():
 
 @app.post("/runs", response_model=RunResponse)
 async def create_run_sync(req: RunRequest):
+    if req.n != ORCH_N:
+        raise HTTPException(status_code=400, detail=f"n must be {ORCH_N} (orchestrator ORCH_N)")
     return await _run_sync(req)
 
 
@@ -459,6 +463,9 @@ async def create_run_async(req: RunRequest):
     created_at = time.time()
     n = req.n
     total_cycles = req.total_cycles if req.total_cycles is not None else (3 * n - 2)
+    if req.n != ORCH_N:
+        raise HTTPException(status_code=400, detail=f"n must be {ORCH_N} (orchestrator ORCH_N)")
+
 
     async with _runs_lock:
         _runs[run_id] = {
@@ -583,7 +590,7 @@ async def stream_run_events(run_id: str, request: Request):
 
 
 @app.get("/debug/pe-connectivity")
-async def pe_connectivity(n: int = N_DEFAULT):
+async def pe_connectivity(n: int = ORCH_N):
     """
     Quick connectivity check to each PE's /health.
     Works in both PE_MODE=local and PE_MODE=k8s.
@@ -603,7 +610,7 @@ async def pe_connectivity(n: int = N_DEFAULT):
         return {"pe_mode": PE_MODE, "n": n, "count": n * n, "results": results}
 
 @app.post("/grid/shutdown")
-async def shutdown_grid(n: int = N_DEFAULT):
+async def shutdown_grid(n: int = ORCH_N):
     if n < 1 or n > 32:
         raise HTTPException(status_code=400, detail="n out of range (1..32)")
 
@@ -623,3 +630,10 @@ async def shutdown_grid(n: int = N_DEFAULT):
         results = await asyncio.gather(*[one(i) for i in range(n * n)])
 
     return {"ok": True, "n": n, "count": n * n, "results": results}
+
+@app.get("/ui/config")
+async def ui_config():
+    return {
+        "n": ORCH_N,
+        "default_tick_period_s": float(os.getenv("DEFAULT_TICK_PERIOD_S", "4.0")),
+    }
